@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>泡泡癒 Bubble Healing Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #020617; font-family: sans-serif; touch-action: none; user-select: none; color: white; }
+        canvas { display: block; }
+        .glass { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        @keyframes lightning-flash {
+            0% { background: rgba(255, 255, 255, 0); }
+            10% { background: rgba(255, 255, 255, 1); }
+            20% { background: rgba(56, 189, 248, 0.6); }
+            100% { background: rgba(255, 255, 255, 0); }
+        }
+        .lightning-active { animation: lightning-flash 0.6s ease-out forwards; }
+        .hazard-line {
+            position: absolute; top: 50%; left: 0; width: 100%; height: 3px;
+            background: #ff4444; box-shadow: 0 0 20px #ff0000;
+            opacity: 0.9; z-index: 5; pointer-events: none;
+            border-bottom: 1px dashed rgba(255,255,255,0.5);
+        }
+        .hazard-label {
+            position: absolute; top: 50%; right: 10px; transform: translateY(-100%);
+            color: #ff4444; font-size: 10px; font-weight: 900; letter-spacing: 2px;
+            text-shadow: 0 0 5px #000; z-index: 6; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="lightning-overlay" class="absolute inset-0 z-50 pointer-events-none"></div>
+    <div class="hazard-line"></div>
+    <div class="hazard-label">WARNING: OVERLOAD LINE</div>
+    
+    <!-- UI Layer -->
+    <div id="ui-layer" class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-4">
+        <div class="flex justify-between items-start pointer-events-auto">
+            <!-- 左側資訊 -->
+            <div class="flex flex-col gap-2">
+                <div class="glass rounded-2xl p-3 min-w-[140px] shadow-2xl">
+                    <p class="text-[10px] opacity-50 uppercase font-bold tracking-widest">Total Score</p>
+                    <p id="hud-score" class="text-3xl font-black font-mono text-yellow-400 tracking-tighter">000000</p>
+                </div>
+                <div class="flex gap-2">
+                    <div class="glass rounded-xl p-2 text-center flex-1">
+                        <p class="text-[9px] opacity-50 font-bold uppercase">Pops</p>
+                        <p class="text-lg font-black font-mono text-sky-400"><span id="hud-pops">0</span>/100</p>
+                    </div>
+                    <div class="glass rounded-xl p-2 text-center w-16">
+                        <p class="text-[9px] opacity-50 font-bold uppercase">Lv</p>
+                        <p id="hud-level" class="text-lg font-black font-mono text-white">1</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側能量與暫停 -->
+            <div class="flex flex-col items-end gap-3">
+                <div class="glass rounded-xl p-3 w-40 shadow-xl">
+                    <p class="text-[9px] opacity-60 text-right mb-1 font-black text-sky-300">⚡ CORE ENERGY</p>
+                    <div id="energy-slots" class="flex gap-1 justify-end">
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-800 transition-all"></div>
+                    </div>
+                </div>
+                <button id="btn-pause" class="w-10 h-10 rounded-full glass flex items-center justify-center hover:bg-white/10 transition-all shadow-lg">
+                    <svg width="18" height="18" fill="currentColor" viewBox="0 0 256 256"><path d="M200,48V208a8,8,0,0,1-16,0V48a8,8,0,0,1,16,0Zm-128,0V208a8,8,0,0,1-16,0V48a8,8,0,0,1,16,0Z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-container" class="absolute inset-0 flex items-center justify-center bg-slate-950/90 backdrop-blur-2xl z-40 px-6">
+        
+        <!-- 首頁 -->
+        <div id="start-panel" class="text-center w-full max-w-xs transition-all">
+            <h1 class="text-6xl font-black mb-2 italic tracking-tighter drop-shadow-2xl">泡泡<span class="text-sky-500">癒</span></h1>
+            <p class="text-sky-400 mb-10 text-[11px] uppercase tracking-[0.5em] font-bold opacity-80">Bubble Healing Pro</p>
+            <div class="bg-white/5 border border-white/10 rounded-[40px] p-8 mb-12 shadow-inner">
+                <p class="text-[11px] text-white/40 uppercase mb-2 font-bold tracking-widest">個人最佳紀錄</p>
+                <p id="best-score-display" class="text-5xl font-black font-mono text-white tracking-tighter">000000</p>
+            </div>
+            <button id="btn-start" class="w-full bg-sky-500 py-5 rounded-full font-black text-2xl shadow-[0_10px_30px_rgba(14,165,233,0.3)] hover:bg-sky-400 active:scale-95 transition-all">啟動舒壓模式</button>
+        </div>
+
+        <!-- 暫停 / 晉升面板 -->
+        <div id="pause-panel" class="hidden text-center w-full max-w-xs glass rounded-[48px] p-10 shadow-2xl">
+            <h2 id="pause-title" class="text-4xl font-black mb-6 italic">遊戲暫停</h2>
+            <div class="bg-black/40 rounded-3xl p-6 mb-10 border border-white/5">
+                <p class="text-[10px] text-white/30 uppercase mb-1 tracking-widest">目前積分</p>
+                <p id="pause-score" class="text-4xl font-black font-mono text-white">0</p>
+            </div>
+            <div class="flex flex-col gap-3">
+                <button id="btn-resume" class="w-full bg-sky-500 py-4.5 rounded-3xl font-bold text-xl hover:bg-sky-400 shadow-lg">繼續挑戰</button>
+                <button id="btn-save-quit" class="w-full bg-white/5 text-white/50 py-4 rounded-3xl font-bold hover:bg-white/10 transition-all">存檔並退出</button>
+            </div>
+        </div>
+
+        <!-- 遊戲結束面板 -->
+        <div id="game-over-panel" class="hidden text-center w-full max-w-sm">
+            <div class="mb-6 inline-block p-5 rounded-full bg-red-500/10 border border-red-500/20">
+                <svg width="40" height="40" fill="#ef4444" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-32-96a12,12,0,1,1,12,12A12,12,0,0,1,96,120Zm64,0a12,12,0,1,1,12,12A12,12,0,0,1,160,120Zm-32,56a48.05,48.05,0,0,1-33.94-14.06,8,8,0,0,1,11.32-11.32,32,32,0,0,0,45.24,0,8,8,0,0,1,11.32,11.32A48.05,48.05,0,0,1,128,176Z"></path></svg>
+            </div>
+            <p id="encouragement-text" class="text-2xl font-bold mb-6 px-4 leading-relaxed tracking-tight text-white">「加油！」</p>
+            <div class="bg-white/5 border border-white/10 rounded-[48px] p-10 mb-12 shadow-2xl">
+                <p class="text-[11px] opacity-40 uppercase mb-2 font-bold tracking-widest">本次舒壓積分</p>
+                <p id="final-score" class="text-7xl font-black font-mono text-yellow-400">0</p>
+            </div>
+            <div class="flex flex-col gap-3">
+                <button id="btn-final-save" class="w-full bg-sky-500 py-5 rounded-3xl font-black text-xl hover:bg-sky-400 shadow-lg">存檔並回首頁</button>
+                <button id="btn-retry" class="w-full bg-white/5 text-white/40 py-4 rounded-3xl font-bold">再試一次</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Config ---
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'bubble-healing-v4-prod';
+
+        const ENCOURAGEMENTS = [
+            "太棒了！休息一下，下次一定更強！", "沒關係，深呼吸，你已經做得很好了。",
+            "壓力都隨泡泡破掉了嗎？再來一場吧！", "你的手速越來越快了，真令人佩服！",
+            "每一顆泡泡的破碎，都是煩惱的消散。", "生活就像泡泡，破了沒關係，再吹一個就好。",
+            "挑戰自我就是最酷的事，你是最棒的。", "剛剛那一波閃電真帥！休息一下吧。",
+            "不管分數高低，只要你開心就好。", "你的專注力真驚人，下次挑戰更高關卡吧！",
+            "慢慢來，比較快。這是一場屬於你的旅程。", "聽聽泡泡破裂的聲音，心靈也跟著療癒了。",
+            "失敗只是暫時的，你的勇氣是永遠的。", "今天的你比昨天更棒了。",
+            "累了嗎？喝杯水，等下再回來爆破壓力！", "享受過程比結果更重要，你做到了。",
+            "哇！這個分數代表你非常投入呢。", "別讓壓力堆積，讓它們在指尖消失吧。",
+            "每一關都是新的開始，加油！", "保持心情愉快，你是自己生命中的冠軍。"
+        ];
+
+        let user = null;
+        let bestScore = 0;
+        let score = 0;
+        let level = 1;
+        let popsInLevel = 0;
+        let energy = 0;
+        let active = false;
+        let paused = false;
+        let bubbles = [];
+        let stuckBubbles = [];
+        let particles = [];
+        let lastSpawn = 0;
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // --- 資料初始化 ---
+        async function initData() {
+            await signInAnonymously(auth);
+            onAuthStateChanged(auth, async (u) => {
+                user = u;
+                if (u) {
+                    const snap = await getDoc(doc(db, 'artifacts', appId, 'users', u.uid, 'stats', 'highscore'));
+                    bestScore = snap.exists() ? (snap.data().score || 0) : 0;
+                    document.getElementById('best-score-display').innerText = String(bestScore).padStart(6, '0');
+                }
+            });
+        }
+
+        async function saveScoreToCloud(finalScore) {
+            if (!user) return;
+            if (finalScore > bestScore) {
+                await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'stats', 'highscore'), { score: finalScore, timestamp: Date.now() });
+                bestScore = finalScore;
+                document.getElementById('best-score-display').innerText = String(bestScore).padStart(6, '0');
+            }
+        }
+
+        // --- 音效 ---
+        function sfx(type, val = 0) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            if (type === 'pop') { osc.type = 'sine'; osc.frequency.setValueAtTime(650, audioCtx.currentTime); }
+            else if (type === 'hit') { osc.type = 'sine'; osc.frequency.setValueAtTime(400 + val * 40, audioCtx.currentTime); }
+            else if (type === 'lightning') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(60, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.4); }
+            gain.gain.setValueAtTime(0.08, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        }
+
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Bubble {
+            constructor() {
+                this.count = Math.floor(Math.random() * 5) + 1;
+                this.radius = 25 + (this.count * 10);
+                this.x = Math.random() * (canvas.width - this.radius * 2) + this.radius;
+                this.y = -this.radius;
+                this.color = ['#38bdf8', '#818cf8', '#a78bfa', '#f472b6', '#fb7185'][this.count - 1];
+                this.vy = (0.7 + Math.random() * 2.3) + (level * 0.45);
+                this.vx = (Math.random() - 0.5) * 0.6;
+                this.scale = 1; this.isStuck = false;
+            }
+            update() {
+                if (this.scale > 1) this.scale -= 0.12;
+                if (!this.isStuck) {
+                    this.y += this.vy; this.x += this.vx;
+                    if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) this.vx *= -1;
+                    if (this.y + this.radius >= canvas.height) { this.y = canvas.height - this.radius; this.isStuck = true; stuckBubbles.push(this); return true; }
+                    for (let sb of stuckBubbles) {
+                        const d = Math.hypot(this.x - sb.x, this.y - sb.y);
+                        if (d < this.radius + sb.radius - 3.5) {
+                            this.isStuck = true; const angle = Math.atan2(this.y - sb.y, this.x - sb.x);
+                            this.x = sb.x + Math.cos(angle) * (this.radius + sb.radius);
+                            this.y = sb.y + Math.sin(angle) * (this.radius + sb.radius);
+                            stuckBubbles.push(this); return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            draw() {
+                ctx.save(); ctx.translate(this.x, this.y); ctx.scale(this.scale, this.scale);
+                ctx.beginPath(); const grad = ctx.createRadialGradient(-this.radius/3, -this.radius/3, 0, 0, 0, this.radius);
+                grad.addColorStop(0, '#fff'); grad.addColorStop(0.3, this.color); grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+                ctx.fillStyle = grad; ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 2.5; ctx.stroke();
+                ctx.fillStyle = 'white'; ctx.font = `bold ${this.radius * 0.9}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(this.count, 0, 1); ctx.restore();
+            }
+        }
+
+        function loop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bg.addColorStop(0, '#020617'); bg.addColorStop(1, '#0f172a');
+            ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (active && !paused) {
+                const now = Date.now();
+                const spawnRate = Math.max(250, 1500 - (level * 100));
+                if (now - lastSpawn > spawnRate) { bubbles.push(new Bubble()); lastSpawn = now; }
+                for (let b of stuckBubbles) if (b.y - b.radius < canvas.height / 2) { gameOver(); break; }
+            }
+
+            if (!paused) {
+                bubbles = bubbles.filter(b => !b.update());
+                // 物理坍塌
+                stuckBubbles.forEach(b => {
+                    if (b.y + b.radius < canvas.height) {
+                        let support = false;
+                        for (let other of stuckBubbles) {
+                            if (b === other) continue;
+                            const d = Math.hypot(b.x - other.x, (b.y + 4) - other.y);
+                            if (d < b.radius + other.radius && other.y > b.y) { support = true; break; }
+                        }
+                        if (!support) b.y += 5;
+                    } else if (b.y + b.radius > canvas.height) b.y = canvas.height - b.radius;
+                });
+            }
+
+            [...bubbles, ...stuckBubbles].forEach(b => b.draw());
+            
+            particles = particles.filter(p => {
+                p.x += p.vx; p.y += p.vy; p.alpha -= 0.05;
+                ctx.globalAlpha = p.alpha; ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+                return p.alpha > 0;
+            });
+            ctx.globalAlpha = 1;
+            requestAnimationFrame(loop);
+        }
+
+        function handleInput(e) {
+            if (!active || paused) return;
+            const rect = canvas.getBoundingClientRect();
+            const px = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+            const py = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+            let hits = [];
+            bubbles.forEach((b, i) => { if (Math.hypot(px-b.x, py-b.y) <= b.radius) hits.push({b, i, d: Math.hypot(px-b.x, py-b.y), stuck: false}); });
+            stuckBubbles.forEach((b, i) => { if (Math.hypot(px-b.x, py-b.y) <= b.radius) hits.push({b, i, d: Math.hypot(px-b.x, py-b.y), stuck: true}); });
+            
+            if (hits.length === 0) return;
+            hits.sort((a,b) => a.d - b.d);
+            const target = hits[0]; const b = target.b;
+            
+            b.count--; b.scale = 1.45;
+            if (b.count <= 0) {
+                if (target.stuck) stuckBubbles.splice(stuckBubbles.indexOf(b), 1); 
+                else bubbles.splice(bubbles.indexOf(b), 1);
+                
+                for(let i=0; i<8; i++) particles.push({x: b.x, y: b.y, color: b.color, size: Math.random()*5+2, alpha: 1, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12});
+                
+                energy++; popsInLevel++; score += 100;
+                
+                // 即時更新 UI
+                document.getElementById('hud-pops').innerText = popsInLevel;
+                document.getElementById('hud-score').innerText = String(score).padStart(6, '0');
+                
+                updateEnergySlots(); sfx('pop');
+                
+                // *** 修正點：擊破 100 顆立即觸發過關並重置 ***
+                if (popsInLevel >= 100) {
+                    levelUpTrigger();
+                }
+                
+                if (energy >= 8) setTimeout(lightningBurst, 50);
+            } else { 
+                score += 10; 
+                document.getElementById('hud-score').innerText = String(score).padStart(6, '0'); 
+                sfx('hit', b.count); 
+            }
+        }
+
+        function updateEnergySlots() {
+            const dots = document.getElementById('energy-slots').children;
+            for(let i=0; i<8; i++) {
+                dots[i].className = `w-2.5 h-2.5 rounded-full transition-all duration-300 ${i < energy ? 'bg-sky-400 shadow-[0_0_10px_#38bdf8] scale-110' : 'bg-slate-800 scale-100'}`;
+            }
+        }
+
+        function lightningBurst() {
+            energy = 0; updateEnergySlots();
+            const fx = document.getElementById('lightning-overlay');
+            fx.classList.add('lightning-active'); setTimeout(() => fx.classList.remove('lightning-active'), 600);
+            [...bubbles, ...stuckBubbles].forEach(b => {
+                score += (b.isStuck ? 60 : 30) * b.count;
+                for(let i=0; i<6; i++) particles.push({x: b.x, y: b.y, color: b.color, size: Math.random()*5+3, alpha: 1, vx: (Math.random()-0.5)*18, vy: (Math.random()-0.5)*18});
+            });
+            bubbles = []; stuckBubbles = [];
+            document.getElementById('hud-score').innerText = String(score).padStart(6, '0');
+            sfx('lightning'); if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        }
+
+        function levelUpTrigger() {
+            // 立即停止遊戲並增加等級
+            active = false; paused = true;
+            level++; // 級數立即增加
+            popsInLevel = 0; // 重置本關進度
+            
+            // 更新 UI 以免關閉視窗後還是舊數字
+            document.getElementById('hud-level').innerText = level;
+            document.getElementById('hud-pops').innerText = "0";
+            
+            // 顯示面板
+            document.getElementById('modal-container').classList.remove('hidden');
+            document.getElementById('pause-panel').classList.remove('hidden');
+            document.getElementById('start-panel').classList.add('hidden');
+            document.getElementById('game-over-panel').classList.add('hidden');
+            
+            document.getElementById('pause-title').innerText = "關卡晉升!";
+            document.getElementById('pause-title').className = "text-4xl font-black text-sky-400 mb-6 italic";
+            document.getElementById('pause-score').innerText = score;
+            sfx('pop');
+        }
+
+        function gameOver() {
+            active = false;
+            document.getElementById('modal-container').classList.remove('hidden');
+            document.getElementById('game-over-panel').classList.remove('hidden');
+            document.getElementById('start-panel').classList.add('hidden');
+            document.getElementById('pause-panel').classList.add('hidden');
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('encouragement-text').innerText = `「${ENCOURAGEMENTS[Math.floor(Math.random()*ENCOURAGEMENTS.length)]}」`;
+        }
+
+        function resetToStartUI() {
+            active = false; paused = false;
+            score = 0; level = 1; popsInLevel = 0; energy = 0;
+            bubbles = []; stuckBubbles = []; particles = [];
+            document.getElementById('hud-pops').innerText = "0";
+            document.getElementById('hud-level').innerText = "1";
+            document.getElementById('hud-score').innerText = "000000";
+            document.getElementById('pause-panel').classList.add('hidden');
+            document.getElementById('game-over-panel').classList.add('hidden');
+            document.getElementById('start-panel').classList.remove('hidden');
+            document.getElementById('modal-container').classList.remove('hidden');
+            updateEnergySlots();
+        }
+
+        // --- 控制綁定 ---
+        document.getElementById('btn-start').onclick = () => {
+            active = true; paused = false; score = 0; level = 1; popsInLevel = 0; energy = 0;
+            bubbles = []; stuckBubbles = []; lastSpawn = Date.now();
+            document.getElementById('hud-pops').innerText = "0";
+            document.getElementById('hud-level').innerText = "1";
+            document.getElementById('hud-score').innerText = "000000";
+            document.getElementById('modal-container').classList.add('hidden');
+            updateEnergySlots();
+        };
+
+        document.getElementById('btn-pause').onclick = () => {
+            if (!active || paused) return;
+            active = false; paused = true;
+            document.getElementById('modal-container').classList.remove('hidden');
+            document.getElementById('pause-panel').classList.remove('hidden');
+            document.getElementById('start-panel').classList.add('hidden');
+            document.getElementById('pause-title').innerText = "遊戲暫停";
+            document.getElementById('pause-title').className = "text-4xl font-black text-white mb-6 italic";
+            document.getElementById('pause-score').innerText = score;
+        };
+
+        document.getElementById('btn-resume').onclick = () => {
+            // 如果剛才是晉升通知，按下繼續時恢復活動即可，因為變數已在 trigger 時更新
+            active = true; paused = false;
+            document.getElementById('modal-container').classList.add('hidden');
+        };
+
+        document.getElementById('btn-save-quit').onclick = async () => {
+            await saveScoreToCloud(score);
+            resetToStartUI();
+        };
+
+        document.getElementById('btn-final-save').onclick = async () => {
+            await saveScoreToCloud(score);
+            resetToStartUI();
+        };
+
+        document.getElementById('btn-retry').onclick = () => {
+            document.getElementById('game-over-panel').classList.add('hidden');
+            document.getElementById('btn-start').onclick();
+        };
+
+        canvas.addEventListener('pointerdown', handleInput);
+        
+        initData();
+        loop();
+    </script>
+</body>
+</html>
+
